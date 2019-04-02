@@ -1,0 +1,46 @@
+---
+- name: hosts set
+  lineinfile: dest=/etc/hosts line="{{ ansible_ssh_host }}\t{{ inventory_hostname }}"
+  delegate_to: '{{ item }}'
+  with_items: "{{groups.mongo_servers}}"
+
+- name: Create the repository for mongodb
+  copy: src=mongodb-org-3.4.repo dest=/etc/yum.repos.d/mongodb-org-3.4.repo
+
+
+- name: Install the mongodb package
+  yum: name={{ item }} state=present
+  with_items:
+#   - python-pip
+   - policycoreutils-python
+   - mongodb-org-mongos-{{mongodb_version}}
+   - mongodb-org-shell-{{mongodb_version}}
+   - mongodb-org-server-{{mongodb_version}}
+
+- name: Create the mongod user
+  user: name=mongod comment="MongoD"
+
+- name: Create the data directory for the namenode metadata
+  file: path={{ mongodb_datadir_prefix }} owner=mongod group=mongod state=directory setype=mongod_var_lib_t recurse=true
+
+- name: create log directory for mongodb
+  file: path=/var/log/mongo state=directory owner=mongod group=mongod setype=mongod_log_t recurse=true
+
+- name: create run directory for mongodb
+  file: path=/var/run/mongo state=directory owner=mongod group=mongod setype=mongod_var_run_t seuser=system_u recurse=true
+
+- name: Copy the keyfile for authentication
+  copy:
+    src: roles/common/files/secret
+    dest: "{{ mongodb_datadir_prefix }}/secret"
+    owner: mongod
+    group: mongod
+    mode: 0400
+    setype: mongod_var_lib_t
+
+- name: Create the memset startup file
+  template: src=memset.service dest=/etc/systemd/system/memset.service mode=0644 seuser=system_u
+
+
+- name: Start the memset service
+  systemd: name=memset state=started daemon_reload=yes enabled=yes
